@@ -10,13 +10,18 @@ import (
 type ParamDef map[int]string
 
 var commandToParamDef = map[string]ParamDef{
-	"NICK": ParamDef{0: "nick"},
+	// Connection Registration
 	"PASS": ParamDef{0: "password"},
+	"NICK": ParamDef{0: "nick"},
+	"USER": ParamDef{0: "user", 1: "mode", 2: "_", 3: "realname"},
 	"QUIT": ParamDef{0: "message"},
+	// Channel Operations
 	"JOIN": ParamDef{0: "channels", 1: "keys"},
+	// Sending Messages
+	"PRIVMSG": ParamDef{0: "msgtarget", 1: "text"},
+	// Miscellaneous Messages
 	"PING": ParamDef{0: "server1", 1: "server2"},
 	"PONG": ParamDef{0: "server", 1: "server2"},
-	"USER": ParamDef{0: "user", 1: "mode", 2: "_", 3: "realname"},
 }
 
 //var commandToParamDef = make(map[string]ParamDef)
@@ -101,21 +106,30 @@ func ParseMessage(s string) *Message {
 	return &m
 }
 
-// Given a command string, return the appropriate ParamDef.
-func getParamDef(command string) ParamDef {
-	var pmap ParamDef
-	// TODO idiomatic way?
-	if pm, ok := commandToParamDef[command]; ok {
-		pmap = pm
-	} else if isReply(command) {
-		pmap = replyParamDef
+// String returns the String representation of a Message in the format
+// specified by RFC 2812.  See
+// https://tools.ietf.org/html/rfc2812#section-3
+func (m *Message) String() string {
+	prefix := m.Prefix.String()
+	if prefix != "" {
+		prefix = ":" + prefix
 	}
-	return pmap
-}
-
-func isReply(command string) bool {
-	_, err := strconv.Atoi(command)
-	return err == nil
+	last := len(m.params) - 1
+	for i, s := range m.params {
+		if s == "" {
+			last = i - 1
+			break
+		}
+	}
+	params := ""
+	if last >= 0 {
+		if last > 0 {
+			params = " "
+			params += strings.Join(m.params[:last], " ")
+		}
+		params += " :" + m.params[last]
+	}
+	return fmt.Sprintf("%s %s%s\r\n", prefix, m.Command, params)
 }
 
 func ParsePrefix(s string) *Prefix {
@@ -133,27 +147,6 @@ func ParsePrefix(s string) *Prefix {
 	return &Prefix{nick, host, user}
 }
 
-func (m *Message) String() string {
-	prefix := m.Prefix.String()
-	if prefix != "" {
-		prefix = ":" + prefix + " "
-	}
-	pcopy := make([]string, len(m.params))
-	for i, s := range m.params {
-		if s != "" {
-			pcopy[i] = s
-		}
-	}
-	params := ""
-	if len(pcopy) > 0 {
-		last := &pcopy[len(pcopy)-1]
-		*last = ":" + *last
-		params += " "
-	}
-	params += strings.Join(pcopy, " ")
-	return fmt.Sprintf("%s%s%s\r\n", prefix, m.Command, params)
-}
-
 func (p *Prefix) String() string {
 	var s string
 	if p.Nick != "" {
@@ -166,6 +159,23 @@ func (p *Prefix) String() string {
 		}
 	}
 	return s
+}
+
+// Given a command string, return the appropriate ParamDef.
+func getParamDef(command string) ParamDef {
+	var pmap ParamDef
+	// TODO idiomatic way?
+	if pm, ok := commandToParamDef[command]; ok {
+		pmap = pm
+	} else if isReply(command) {
+		pmap = replyParamDef
+	}
+	return pmap
+}
+
+func isReply(command string) bool {
+	_, err := strconv.Atoi(command)
+	return err == nil
 }
 
 // Message Makers
@@ -213,6 +223,13 @@ func NewJoinMessage(p Prefix, chans []string, keys []string) *Message {
 	}
 	pm["keys"] = strings.Join(keys, ",")
 	return NewMessage(p, "JOIN", pm)
+}
+
+// PRIVMSG => ParamDef{0: "msgtarget", 1: "text"}
+// https://tools.ietf.org/html/rfc2812#section-3.3.1
+func NewPrivateMessage(p Prefix, mt string, t string) *Message {
+	return NewMessage(p, "PRIVMSG",
+		paramMap{"msgtarget": mt, "text": t})
 }
 
 // PING => ParamDef{0: "server1", 1: "server2"}
