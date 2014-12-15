@@ -20,8 +20,9 @@ var commandToParamDef = map[string]ParamDef{
 	// Sending Messages
 	"PRIVMSG": ParamDef{0: "msgtarget", 1: "text"},
 	// Miscellaneous Messages
-	"PING": ParamDef{0: "server1", 1: "server2"},
-	"PONG": ParamDef{0: "server", 1: "server2"},
+	"PING":  ParamDef{0: "server1", 1: "server2"},
+	"PONG":  ParamDef{0: "server", 1: "server2"},
+	"ERROR": ParamDef{0: "message"},
 }
 
 //var commandToParamDef = make(map[string]ParamDef)
@@ -59,11 +60,11 @@ func NewMessage(p Prefix, command string, params map[string]string) *Message {
 	return &m
 }
 
-func ParseMessage(s string) *Message {
-	// FIXME: handle empty
+func ParseMessage(s string) (*Message, error) {
 	if len(s) == 0 {
-		return new(Message)
+		return nil, fmt.Errorf("tirc: Unable to parse empty message.")
 	}
+	// Parse s by walking down it.
 	s = strings.TrimSpace(s)
 	var p *Prefix
 	// Prefix
@@ -79,15 +80,18 @@ func ParseMessage(s string) *Message {
 	s = s[cmdIdx+1:]
 	// Params
 	colonSplit := strings.SplitN(s, ":", 2)
-	if colonSplit[0] == "" {
-		colonSplit = colonSplit[1:]
+	var params []string
+	if colonSplit[0] != "" {
+		// The "middle" params
+		params = strings.Split(strings.TrimSpace(colonSplit[0]), " ")
 	}
-	// The "middle" params
-	params := strings.Split(strings.TrimSpace(colonSplit[0]), " ")
-	if len(colonSplit) > 1 {
+	if len(colonSplit) == 2 && colonSplit[1] != "" {
 		// The "trailing" param
 		params = append(params, colonSplit[1])
 	}
+	// Done parsing s now, zero it just to be clear.
+	s = ""
+	// Put it together.
 	m := Message{p, command, params, make(map[string]*string)}
 
 	paramDef := getParamDef(m.Command)
@@ -103,7 +107,7 @@ func ParseMessage(s string) *Message {
 			m.Params[param] = &m.params[i]
 		}
 	}
-	return &m
+	return &m, nil
 }
 
 // String returns the String representation of a Message in the format
@@ -121,6 +125,7 @@ func (m *Message) String() string {
 			break
 		}
 	}
+
 	params := ""
 	if last >= 0 {
 		if last > 0 {
@@ -245,3 +250,6 @@ func NewPongMessage(p Prefix, s string, s2 string) *Message {
 	return NewMessage(p, "PONG",
 		paramMap{"server": s, "server2": s2})
 }
+
+// ERROR => ParamDef{0: "message"}
+// https://tools.ietf.org/html/rfc2812#section-3.7.4

@@ -107,8 +107,9 @@ func (c *Client) sender() {
 // TODO blocking?
 func (c *Client) Disconnect(qmessage string) (err error) {
 	if c.IsConnected {
-		// TODO send QUIT
+		c.Send(*NewQuitMessage(*c.Prefix, qmessage))
 	}
+	// FIXME: listen for server reply to disconnect
 	if c.listenerRunning {
 		c.stopListener <- 1
 	}
@@ -127,6 +128,7 @@ func (c *Client) listener(out chan<- Message) {
 	for {
 		select {
 		case <-c.stopListener:
+			c.listenerRunning = false
 			return
 		default:
 			c.readAndHandleLine(r, out)
@@ -138,7 +140,10 @@ func (c *Client) readAndHandleLine(r *bufio.Reader, out chan<- Message) {
 	line, err := r.ReadString('\n')
 	switch err {
 	case nil:
-		m := ParseMessage(line)
+		m, err := ParseMessage(line)
+		if err != nil {
+			log.Printf("%v\n", err)
+		}
 		forward := true
 		switch m.Command {
 		case "001": // RPL_WELCOME
@@ -148,12 +153,11 @@ func (c *Client) readAndHandleLine(r *bufio.Reader, out chan<- Message) {
 			//forward = false
 		}
 		if forward {
-			//log.Printf("Got %v.\n", line)
 			out <- *m
 		}
 	case io.EOF:
 		log.Printf("Reached EOF, disconnecting.\n")
-		c.listenerRunning = false
+		c.IsConnected = false
 		c.Disconnect("")
 		return
 	default:
