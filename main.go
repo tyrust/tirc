@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"time"
 
 	"github.com/tyrust/tirc/irc"
+	"time"
 )
 
 var (
@@ -24,7 +24,6 @@ func main() {
 	c := irc.NewClient(user, nick, name, &localhost)
 
 	in := make(chan irc.Message, 25)
-	go reader(in)
 
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	err := c.Connect(&addr, password, in)
@@ -34,9 +33,13 @@ func main() {
 	}
 
 	c.Send(*irc.NewJoinMessage(*c.Prefix, []string{"#general"}, nil))
-	for {
-		time.Sleep(time.Second * 60)
-	}
+	c.Send(*irc.NewPrivateMessage(*c.Prefix, "#general", "hello #general"))
+	c.Send(*irc.NewPrivateMessage(*c.Prefix, "tyrus", "hello tyrus"))
+	c.Quit("later nerds")
+	go reader(in)
+	//time.Sleep(time.Second * 5)
+	//c.Disconnect()
+
 }
 
 func reader(in <-chan irc.Message) {

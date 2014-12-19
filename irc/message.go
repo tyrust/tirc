@@ -253,3 +253,7 @@ func NewPongMessage(p Prefix, s string, s2 string) *Message {
 
 // ERROR => ParamDef{0: "message"}
 // https://tools.ietf.org/html/rfc2812#section-3.7.4
+func NewErrorMessage(p Prefix, m string) *Message {
+	return NewMessage(p, "ERROR",
+		paramMap{"message": m})
+}

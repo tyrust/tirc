@@ -34,7 +34,9 @@ type Client struct {
 	// Channel for indicating a successful handshake.
 	hsChan chan int
 
+	// State variables
 	listenerRunning bool
+	quitSent        bool
 }
 
 func NewClient(user *string, nick *string, name *string, host *string) *Client {
@@ -45,7 +47,7 @@ func NewClient(user *string, nick *string, name *string, host *string) *Client {
 	// TODO configure buffer size
 	c.outQueue = make(chan *Message, 25)
 	//c.logger = l
-	c.stopListener = make(chan int)
+	c.stopListener = make(chan int, 1)
 	c.hsChan = make(chan int)
 	return c
 }
@@ -104,12 +106,13 @@ func (c *Client) sender() {
 }
 
 // Send QUIT with qmessage to server and close the connection.
-// TODO blocking?
-func (c *Client) Disconnect(qmessage string) (err error) {
-	if c.IsConnected {
-		c.Send(*NewQuitMessage(*c.Prefix, qmessage))
-	}
-	// FIXME: listen for server reply to disconnect
+// TODO: Should this block?
+func (c *Client) Quit(qmessage string) {
+	c.Send(*NewQuitMessage(*c.Prefix, qmessage))
+	c.quitSent = true
+}
+
+func (c *Client) Disconnect() (err error) {
 	if c.listenerRunning {
 		c.stopListener <- 1
 	}
@@ -129,6 +132,8 @@ func (c *Client) listener(out chan<- Message) {
 		select {
 		case <-c.stopListener:
 			c.listenerRunning = false
+			close(out)
+			log.Print("Listener stopped")
 			return
 		default:
 			c.readAndHandleLine(r, out)
@@ -150,7 +155,12 @@ func (c *Client) readAndHandleLine(r *bufio.Reader, out chan<- Message) {
 			c.hsChan <- 1
 		case "PING":
 			c.Send(*NewPongMessage(*c.Prefix, *m.Params["server1"], ""))
-			//forward = false
+			forward = false
+		case "ERROR":
+			if c.quitSent {
+				c.Disconnect()
+			}
+			forward = false
 		}
 		if forward {
 			out <- *m
@@ -158,7 +168,7 @@ func (c *Client) readAndHandleLine(r *bufio.Reader, out chan<- Message) {
 	case io.EOF:
 		log.Printf("Reached EOF, disconnecting.\n")
 		c.IsConnected = false
-		c.Disconnect("")
+		c.Disconnect()
 		return
 	default:
 		log.Printf("Reader error: %s\n", err)
